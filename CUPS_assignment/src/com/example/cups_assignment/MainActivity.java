@@ -20,9 +20,11 @@ import android.os.Bundle;
 import android.view.Menu;
 import android.view.View;
 import android.view.ViewGroup;
+import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.ListView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.loopj.android.http.AsyncHttpClient;
 import com.loopj.android.http.AsyncHttpResponseHandler;
@@ -35,7 +37,11 @@ public class MainActivity extends Activity {
 
 	private AsyncHttpClient client;
 
-	double currLat, currLng;
+	private double currLat, currLng;
+
+	private final String KEY_NAME = "name";
+	private final String KEY_ADDRESS = "address";
+	private final String KEY_DISTANCE = "distance";
 
 	@Override
 	protected void onCreate(Bundle savedInstanceState) {
@@ -73,30 +79,21 @@ public class MainActivity extends Activity {
 	 */
 	private void getLocation() {
 		LocationManager lm = (LocationManager)getSystemService(Context.LOCATION_SERVICE); 
-		Location location = lm.getLastKnownLocation(LocationManager.GPS_PROVIDER);
 
-		//The call to getLastKnownLocation() doesn't block - which means it will return null if no position is currently available
-		if (location == null){
-			lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 10, new LocationListener() {
-				public void onLocationChanged(Location location) {
-					currLng = location.getLongitude();
-					currLat = location.getLatitude();
-				}
-
-				@Override
-				public void onProviderDisabled(String provider) {}
-				@Override
-				public void onProviderEnabled(String provider) {}
-				@Override
-				public void onStatusChanged(String provider, int status, Bundle extras) {}
+		lm.requestLocationUpdates(LocationManager.GPS_PROVIDER, 2000, 10, new LocationListener() {
+			public void onLocationChanged(Location location) {
+				currLng = location.getLongitude();
+				currLat = location.getLatitude();
 			}
-					);
+
+			@Override
+			public void onProviderDisabled(String provider) {}
+			@Override
+			public void onProviderEnabled(String provider) {}
+			@Override
+			public void onStatusChanged(String provider, int status, Bundle extras) {}
 		}
-		else{
-			//in case the call to getLastKnownLocation() did return something..
-			currLng = location.getLongitude();
-			currLat = location.getLatitude();
-		}
+				);
 	}
 
 	/**
@@ -116,16 +113,20 @@ public class MainActivity extends Activity {
 				try {
 					JSONObject value = (JSONObject) jsonObj.get(key);
 
-					double lat, lng, euclidDistance;
+					double lat, lng, distance;
 					lat = Double.valueOf(value.getString("lat"));
 					lng = Double.valueOf(value.getString("lng"));
-					//euclidean distance from current location and the coffee...
-					euclidDistance = Math.sqrt(Math.pow((lat - currLat) ,2) + Math.pow((lng - currLng),2));
+
+
+					// euclidean distance from current location and the coffee...
+					//eucleadDistance = Math.sqrt(Math.pow((lat - currLat) ,2) + Math.pow((lng - currLng),2));
+
+					distance = distFrom(currLat, currLng, lat,lng);
 
 					HashMap<String, String> oneCoffee = new HashMap<String, String>();
-					oneCoffee.put("name", value.getString("name"));
-					oneCoffee.put("address", value.getString("address"));
-					oneCoffee.put("distance", String.valueOf(euclidDistance));
+					oneCoffee.put(KEY_NAME, value.getString(KEY_NAME));
+					oneCoffee.put(KEY_ADDRESS, value.getString(KEY_ADDRESS));
+					oneCoffee.put(KEY_DISTANCE, String.valueOf(distance));
 
 					coffeeList.add(oneCoffee);
 				} catch (JSONException e) {
@@ -139,6 +140,28 @@ public class MainActivity extends Activity {
 			e.printStackTrace();
 		}
 	}
+	/**
+	 * 	based on http://en.wikipedia.org/wiki/Haversine_formula 
+	 * @param lat1 of current location 
+	 * @param lng1 of current location
+	 * @param lat2 of coffee location
+	 * @param lng2 of coffee location
+	 * @return the distance between you and the coffee in meters
+	 */
+	public static double distFrom(double lat1, double lng1, double lat2, double lng2) {
+		double earthRadius = 3958.75;	//in miles...
+		double dLat = Math.toRadians(lat2-lat1);
+		double dLng = Math.toRadians(lng2-lng1);
+		double a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+				Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) *
+				Math.sin(dLng/2) * Math.sin(dLng/2);
+		double c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+		double dist = earthRadius * c;
+
+		int meterConversion = 1609;
+
+		return dist * meterConversion;
+	}
 
 	/**
 	 * sort the coffee list by distance
@@ -148,13 +171,13 @@ public class MainActivity extends Activity {
 			@Override
 			public int compare(HashMap<String, String> coffee1, HashMap<String, String> coffee2) {
 				//negative if coffee1 is closer then coffee2, positive if coffee2 is closer
-				Double d = Double.valueOf(coffee1.get("distance")) - Double.valueOf(coffee2.get("distance"));
-				
-				
-						if (d<0) return -1;
-						else return 1;
-				}
-	    });		
+				Double d = Double.valueOf(coffee1.get(KEY_DISTANCE)) - Double.valueOf(coffee2.get(KEY_DISTANCE));
+
+
+				if (d<0) return -1;
+				else return 1;
+			}
+		});		
 	}
 
 	private void pupulateListView() {
@@ -163,6 +186,22 @@ public class MainActivity extends Activity {
 
 		// make it possible to fast scroll over the list of coffees!
 		listView.setFastScrollEnabled(true);
+		registerItemClickCallBack();
+	}
+	
+	private void registerItemClickCallBack() {
+		listView.setOnItemClickListener(new AdapterView.OnItemClickListener() {
+			@Override
+			public void onItemClick(AdapterView<?> parent, View vieClicked,	int position, long id) {
+				// get the sms
+				HashMap<String, String> clickedCoffee = coffeeList.get(position);
+
+				// rasing a toest
+				String message = "Distance to the coffee in meters: " +clickedCoffee.get(KEY_DISTANCE);
+				Toast.makeText(MainActivity.this, message,	Toast.LENGTH_SHORT).show();
+			}
+
+		});
 	}
 
 	@Override
@@ -213,7 +252,7 @@ public class MainActivity extends Activity {
 
 				mHolder.nameView = (TextView) itemView.findViewById(R.id.name);
 				mHolder.addressView = (TextView) itemView.findViewById(R.id.address);
-				//	mHolder.euclidView = (TextView) itemView.findViewById(R.id.euclid);
+				//mHolder.distanceView = (TextView) itemView.findViewById(R.id.distance);
 				itemView.setTag(mHolder);
 			}
 			else {
@@ -224,17 +263,18 @@ public class MainActivity extends Activity {
 			HashMap<String, String> currentCoffee = getItem(position);
 
 			if (currentCoffee != null) {
-				mHolder.nameView.setText(currentCoffee.get("name"));
-				mHolder.addressView.setText(currentCoffee.get("address"));
-				//mHolder.euclidView.setText(currentCoffee.get("distance"));
+				mHolder.nameView.setText(currentCoffee.get(KEY_NAME));
+				mHolder.addressView.setText(currentCoffee.get(KEY_ADDRESS));
+				//mHolder.distanceView.setText(currentCoffee.get(KEY_DISTANCE));
 			}
 			return itemView;
+
 		}
 
 		private class ViewHolder {
 			TextView nameView; 
 			TextView addressView;
-			//TextView euclidView;
+			//TextView distanceView;
 		}
 	}
 
